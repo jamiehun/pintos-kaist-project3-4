@@ -426,6 +426,12 @@ int process_wait(tid_t child_tid UNUSED)
 	if (child == NULL)
 		return -1;
 
+	/* 해당코드 추가 */
+	if (child->is_waited_flag == true)
+		return -1;
+
+	child->is_waited_flag = true;
+
 	// 자식 process가 exit될 때까지 sleep
 	sema_down(&child->wait);
 

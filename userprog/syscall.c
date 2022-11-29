@@ -303,6 +303,7 @@ int filesize(int fd)
 /* fd를 size만큼 buffer에 읽어온다 */
 int read(int fd, void *buffer, unsigned size)
 {
+	check_address(buffer);
 	check_address(buffer + size - 1); // buffer 끝 주소도 유효성 검사
 
 	struct file *f = process_get_file(fd);
@@ -404,6 +405,10 @@ unsigned tell(int fd)
 fd를 닫고 fdt에서 fd를 삭제한다
 
 dup2의 경우 같은 file pointer를 여러 fd가 가지고 있을 수 있다
+여기에서 oldfd와 newfd를 가지고 있고 oldfd가 유효한 fd(file descriptor)이고,
+newfd가 oldfd와 같은 값을 가지면 newfd값을 리턴함 
+fd는 다르지만 똑같은 파일의 description을 의미하고, file의 offset이나 status flags를 공유함
+
 한 fd를 close한다고 해서 file_close를 해버리면 다른 fd들이 쓰레기값을 가지게 된다
 그래서 struct file에 자신이 얼마나 복사됬는지를 기록해 두는 dup_cnt를 추가해서 관리
 만약 복사되어 있다면 dup_cnt만 줄이고 fd를 삭제한다
