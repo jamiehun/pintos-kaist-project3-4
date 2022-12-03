@@ -142,14 +142,29 @@ vm_evict_frame (void) {
 	return NULL;
 }
 
+/* palloc_get_page를 호출하여 user pool으로부터 새로운 physical memory page를 가져옴
+   User memory pool에서 페이지를 가져온다면, 프레임을 할당하고 프레임 구조체 멤버 초기화 후 프레임을 반환함 */
+/* 이 함수를 구현한 후에는 모든 유저 공간페이지들을 이 함수들을 통해 할당해야함 */
 /* palloc() and get frame. If there is no available page, evict the page
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	
+	/* 1) 새로운 physical memory를 만듦 */
+	struct frame *frame = (struct frame *)malloc(sizeof(struct frame));
+
+	/* 2) 유저 pool에서 palloc_get_page 후 프레임 할당 */
+	frame->kva = palloc_get_page(PAL_USER);
+	
+	/* 3) 구조체 멤버 초기화 후 */
+	frame->page = NULL;
+
+	/* 4) 페이지 할당이 실패했을 경우 PANIC("to do")로 해당케이스들 표시 */
+	if (frame->kva == NULL);
+		PANIC("TO DO");
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -186,18 +201,32 @@ vm_dealloc_page (struct page *page) {
 	free (page);
 }
 
+/* va를 할당할 페이지를 claim (physical frame을 할당함) */
 /* Claim the page that allocate on VA. */
-bool
-vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
+bool vm_claim_page (void *va UNUSED) {
 	/* TODO: Fill this function */
+	
+	/* !!! 원본과 다른 생각 !!! */
+	// 나의 방식 : Gitbook에서 얘기한 것처럼 page를 만들고 해당 페이지에 대해서 va를 할당하기만 함 
+	// struct page *page = palloc_get_page(PAL_USER);
+	// page->va = va;
+
+	// 원본 : spt에서 va에 매칭되는 페이지를 찾고 해당 페이지를 통해서 do_claim을 진행함
+	// ㄴ ??? 의문 : va와 spt에 올려주는 행위는 그 전에 끝내있었다는 것을 의미하는데 흐름상 이게 맞을까?
+	struct page *page = spt_find_page(thread_current()->spt.table, va);
+	if(page == NULL)
+		return false;
 
 	return vm_do_claim_page (page);
 }
 
+
+/* 인자로 주어진 page에 물리 메모리 프레임을 할당함 
+   vm_get_frame 함수를 호출함으로써 프레임 하나를 얻고 MMU를 세팅해야하는데
+   이는 곧 가상주소와 물리주소를 매핑한 정보를 테이블에 추가해야한다는 것을 의미함 */
 /* Claim the PAGE and set up the mmu. */
-static bool
-vm_do_claim_page (struct page *page) {
+static bool vm_do_claim_page (struct page *page) {
+	struct thread *curr = thread_current();
 	struct frame *frame = vm_get_frame ();
 
 	/* Set links */
@@ -205,8 +234,13 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	/* (pml4_set_page 주석참고하면 어떤 방식으로 페이지테이블에 추가되는지 알 수 있음)*/
+	if(!pml4_set_page(curr->pml4, page->va, frame->kva, true))
+		return false;
 
-	return swap_in (page, frame->kva);
+	return true;
+
+	// return swap_in (page, frame->kva); // ??? 어디서 쓰는 물건?
 }
 
 /* 보조테이블을 초기화하는 함수 (해시테이블 자료 구조로 구현)
