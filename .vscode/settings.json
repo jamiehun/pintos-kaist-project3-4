@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        "*.html": "html",
         "random.h": "c",
         "process.h": "c",
         "intr-stubs.h": "c",
@@ -24,7 +25,9 @@
         "malloc.h": "c",
         "filesys.h": "c",
         "syscall-nr.h": "c",
-        "syn-read.h": "c"
+        "syn-read.h": "c",
+        "vm.h": "c",
+        "main.h": "c"
     },
     "C_Cpp.errorSquiggles": "Disabled"
 }

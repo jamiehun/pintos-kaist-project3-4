@@ -19,6 +19,9 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+
+#define VM // 편의상
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -837,8 +840,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 }
 
 /* Create a minimal stack by mapping a zeroed page at the USER_STACK */
-static bool
-setup_stack(struct intr_frame *if_)
+static bool setup_stack(struct intr_frame *if_)
 {
 	uint8_t *kpage;
 	bool success = false;
@@ -874,18 +876,48 @@ install_page(void *upage, void *kpage, bool writable)
 	return (pml4_get_page(t->pml4, upage) == NULL && pml4_set_page(t->pml4, upage, kpage, writable));
 }
 #else
+
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
+/* file_info 구조체 선언 */
+struct file_info{
+	struct file *file;
+	off_t ofs;
+	uint32_t page_read_bytes;
+	uint32_t page_zero_bytes;
+};
+
+/* load time에 할당 및 초기화되고, page_fault가 실행될 때 호출됨 */
+/* stack을 identify하기 위한 방법을 제공해야할 수도 있음 */
 static bool
 lazy_load_segment(struct page *page, void *aux)
 {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	/* aux로 전달받은 file data */
+	struct file_info *file_info = (struct file_info *)aux;
+	int page_read_bytes = file_info->page_read_bytes;
+
+	// 1) Load 해야할 부분으로 file_ofs 변경
+	file_seek(file_info->file, file_info->ofs);
+
+	// 2) Load segment 
+	// 앞에서 가져온 aux의 page_read_byte와 kva로 접근해서 읽는 바이트의 크기를 비교 
+	if (file_read(file_info->file, page->frame->kva, page_read_bytes) != page_read_bytes)
+		return false;
+
+	// 3) setup zero bytes space
+	memset(page->frame->kva + page_read_bytes, 0, file_info->page_zero_bytes);
+
+	return true;
+
+
 }
 
+/* VM일 경우 */
 /* Loads a segment starting at offset OFS in FILE at address
  * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
  * memory are initialized, as follows:
@@ -908,6 +940,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 	ASSERT(pg_ofs(upage) == 0);
 	ASSERT(ofs % PGSIZE == 0);
 
+	// read_bytes와 zero_bytes가 모두 0일 때 => 현재 load segment에서 모두 page가 할당되었을 때
 	while (read_bytes > 0 || zero_bytes > 0)
 	{
 		/* Do calculate how to fill this page.
@@ -916,33 +949,63 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
-											writable, lazy_load_segment, aux))
+		/* TODO: Set up aux to pass information to the lazy_load_segment. 
+		   (simons) aux를 통해 file data 전달을 위해 만든 struct file_info */
+		struct file_info *file_info = (struct file_info *)malloc(sizeof(struct file_info));
+
+		file_info->file = file;
+		file_info->ofs = ofs;
+		file_info->page_read_bytes = page_read_bytes;
+		file_info->page_zero_bytes = page_zero_bytes;
+		
+		/* 해당 virtual memory(=upage)에 struct page를 할당해줌
+		   physical memory로 load되기 전에는 uninit page
+		   
+		   page_fault로 physical memory로 load될 때는 할당 당시에 입력받은 page type으로 변환하고
+		   lazy_load_segment 함수를 실행시켜서 upload함 */
+
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, file_info))
 			return false;
 
 		/* Advance. */
-		read_bytes -= page_read_bytes;
-		zero_bytes -= page_zero_bytes;
-		upage += PGSIZE;
+		read_bytes -= page_read_bytes;	// 남은 read_bytes 갱신
+		zero_bytes -= page_zero_bytes;  // 남은 zero_bytes 갱신 
+		upage += PGSIZE;				// virtual addres를 옮겨서 다음 page space를 가리키게 함
+		ofs += PGSIZE; 					// 다음 page에 매핑시킬 file 위치 갱신 (??? offset은 같아도 되지 않나 ???)
 	}
 	return true;
 }
 
+/* VM에서 활용 */
+/* 새로운 메모리 관리 시스템에서 stack allocation을 맞추기 위해 setup_stack을 이용*/
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
-static bool
-setup_stack(struct intr_frame *if_)
+static bool setup_stack(struct intr_frame *if_)
 {
-	bool success = false;
-	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
+	struct thread *curr = thread_current();
+
+	/* (simons) stack은 위에서 아래로 커지며 stack의 시작위치는 USER_STACK */
+	/* PGSIZE만큼 빼서 page_space 확보 => 해당 page 시작 virtual_address = stack_bottom */
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
 
-	return success;
+	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
+
+	// 1) 확보한 page space에 struct page 할당
+	if(!vm_alloc_page_with_initializer(VM_ANON, stack_bottom, true, NULL, NULL))
+		return false;
+
+	// 2) page를 physical memory에 바로 올림
+	//	  => 바로 argument들을 stack에 쌓아야하기 때문에 lazy load할 필요가 없음
+	if (!vm_claim_page(stack_bottom))
+		return false;
+
+	// 3) stack pointer 설정
+	if_->rsp = USER_STACK;
+
+	return true;
 }
 #endif /* VM */
 

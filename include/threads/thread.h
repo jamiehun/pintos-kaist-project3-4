@@ -131,6 +131,8 @@ struct thread
 	int stdin_cnt;
 	int stdout_cnt;
 
+	bool is_waited_flag;
+
 	struct file *run_file;
 
 #ifdef USERPROG
