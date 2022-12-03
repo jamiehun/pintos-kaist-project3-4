@@ -39,11 +39,10 @@ static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
+/* vm_type에 맞는 적절한 초기화 함수를 가져와야함, uninit_new 함수를 호출해야함 */
 /* Create the pending page object with initializer. If you want to create a
- * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. */
-bool
-vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
+ * page, do not create it directly and make it through this function or `vm_alloc_page`. */
+bool vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
@@ -51,12 +50,33 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
 	/* Check wheter the upage is already occupied or not. */
+	/* page can be allocated when not occupied */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 
+		// 1) malloc으로 page struct 만듦
+		struct page *new_page = (struct page *)malloc(sizeof(struct page));
+
+		// 2) type에 따라 uninit_new을 다르게 함
+		switch (type) {
+			case VM_ANON:
+				uninit_new(new_page, upage, init, type, aux, anon_initializer);
+				break;
+
+			case VM_FILE:
+				uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
+				break;
+		}
+
 		/* TODO: Insert the page into the spt. */
+		// 3) insert the page into the spt
+		spt_insert_page(spt, new_page);
+	}
+		
+	return true;
+
 	}
 err:
 	return false;
@@ -219,7 +239,6 @@ bool vm_claim_page (void *va UNUSED) {
 
 	return vm_do_claim_page (page);
 }
-
 
 /* 인자로 주어진 page에 물리 메모리 프레임을 할당함 
    vm_get_frame 함수를 호출함으로써 프레임 하나를 얻고 MMU를 세팅해야하는데
