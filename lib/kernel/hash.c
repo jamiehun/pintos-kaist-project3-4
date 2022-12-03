@@ -239,6 +239,7 @@ hash_empty (struct hash *h) {
 #define FNV_64_PRIME 0x00000100000001B3UL
 #define FNV_64_BASIS 0xcbf29ce484222325UL
 
+/* buf에서 시작하는 size만큼의 byte를 해싱한 값을 반환 */
 /* Returns a hash of the SIZE bytes in BUF. */
 uint64_t
 hash_bytes (const void *buf_, size_t size) {

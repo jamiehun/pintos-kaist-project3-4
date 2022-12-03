@@ -25,5 +25,6 @@
         "filesys.h": "c",
         "syscall-nr.h": "c",
         "syn-read.h": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "Disabled"
 }

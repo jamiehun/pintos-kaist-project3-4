@@ -30,6 +30,16 @@ struct hash_elem {
 	struct list_elem list_elem;
 };
 
+/* Returns a pointer to the structure that elem, a pointer to a struct hash_elem, is embedded within. 
+  You must provide type, the name of the structure that elem is inside, and member, 
+  the name of the member in type that elem points to.
+  
+  For example, suppose `h` is a `struct hash_elem *` variable that points to a struct thread member 
+  (of type `struct hash_elem`) named `h_elem`. 
+  Then, `hash_entry` (`h, struct thread, h_elem`) yields the address of the `struct thread` 
+  that `h` points within. 
+  
+  (활용 : hash_entry(temp_hash_elem, struct page, hash_elem)은 page 구조체에 있는 hash_elem을 찾는 함수인 듯) */
 /* Converts pointer to hash element HASH_ELEM into a pointer to
  * the structure that HASH_ELEM is embedded inside.  Supply the
  * name of the outer structure STRUCT and the member name MEMBER

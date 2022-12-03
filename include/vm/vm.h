@@ -1,6 +1,8 @@
 #ifndef VM_VM_H
 #define VM_VM_H
 #include <stdbool.h>
+#include <hash.h>
+#include "threads/mmu.h"
 #include "threads/palloc.h"
 
 enum vm_type {
@@ -46,6 +48,11 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	bool is_loaded;
+	bool writable;
+
+	/* spt 관련 */
+	struct hash_elem hash_elem; 
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -59,12 +66,14 @@ struct page {
 	};
 };
 
+/* 현재까지는 frame은 물리적 메모리 쪽 (22.12.04) */
 /* The representation of "frame" */
 struct frame {
 	void *kva;
 	struct page *page;
 };
 
+/* 이 구조체를 함수 포인터를 3개 가진 함수의 테이블이라고 생각하면 됨 */
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
  * Put the table of "method" into the struct's member, and
@@ -85,6 +94,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash table; 
 };
 
 #include "threads/thread.h"

@@ -604,12 +604,15 @@ load(const char *file_name, struct intr_frame *if_)
 		argv[argc++] = token;
 
 	/* Allocate and activate page directory. */
+	/* 페이지 디렉토리 생성 */
 	t->pml4 = pml4_create();
 	if (t->pml4 == NULL)
 		goto done;
+	/* 페이지 테이블 활성화 */
 	process_activate(thread_current());
 
 	/* Open executable file. */
+	/* 프로그램 파일 open */
 	file = filesys_open(argv[0]);
 	if (file == NULL)
 	{
@@ -624,8 +627,14 @@ load(const char *file_name, struct intr_frame *if_)
 	file_deny_write(file);
 
 	/* Read and verify executable header. */
-	if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr || memcmp(ehdr.e_ident, "\177ELF\2\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 0x3E // amd64
-		|| ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Phdr) || ehdr.e_phnum > 1024)
+	/* ELF 파일의 헤더정보를 읽어와 저장 */
+	if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr 
+			|| memcmp(ehdr.e_ident, "\177ELF\2\1\1", 7) 
+			|| ehdr.e_type != 2 
+			|| ehdr.e_machine != 0x3E // amd64
+			|| ehdr.e_version != 1 
+			|| ehdr.e_phentsize != sizeof(struct Phdr) 
+			|| ehdr.e_phnum > 1024)
 	{
 		printf("load: %s: error loading executable\n", argv[0]);
 		goto done;
@@ -641,6 +650,7 @@ load(const char *file_name, struct intr_frame *if_)
 			goto done;
 		file_seek(file, file_ofs);
 
+		/* 배치정보를 읽어와 저장 */
 		if (file_read(file, &phdr, sizeof phdr) != sizeof phdr)
 			goto done;
 
@@ -661,6 +671,7 @@ load(const char *file_name, struct intr_frame *if_)
 		case PT_LOAD:
 			if (validate_segment(&phdr, file))
 			{
+				// ??? 시간될 때 좀 더 찾아보기 ???
 				bool writable = (phdr.p_flags & PF_W) != 0;
 				uint64_t file_page = phdr.p_offset & ~PGMASK;
 				uint64_t mem_page = phdr.p_vaddr & ~PGMASK;
@@ -680,6 +691,7 @@ load(const char *file_name, struct intr_frame *if_)
 					read_bytes = 0;
 					zero_bytes = ROUND_UP(page_offset + phdr.p_memsz, PGSIZE);
 				}
+				/* 배치정보를 통해 파일을 메모리에 적재 */
 				if (!load_segment(file, file_page, (void *)mem_page,
 								  read_bytes, zero_bytes, writable))
 					goto done;
