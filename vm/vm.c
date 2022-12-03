@@ -265,8 +265,7 @@ static bool vm_do_claim_page (struct page *page) {
 /* 보조테이블을 초기화하는 함수 (해시테이블 자료 구조로 구현)
    새로운 프로세스 시작하거나 do_fork로 자식 프로세스 생성될 때 위 함수 호출*/
 /* Initialize new supplemental page table */
-void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+void supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 	hash_init(&spt->table, spt_hash, spt_less, NULL);
 }
 

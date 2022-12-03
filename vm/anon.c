@@ -39,6 +39,7 @@ bool anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	// 2) anon_page를 page의 anon으로 설정 
 	struct anon_page *anon_page = &page->anon;
 
+	// 3) anon_page->test를 초기화해주기 위함인듯
 	anon_page->test = 4;
 
 	return true;
