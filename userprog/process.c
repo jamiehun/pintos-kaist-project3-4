@@ -490,7 +490,10 @@ process_cleanup(void)
 	struct thread *curr = thread_current();
 
 #ifdef VM
-	supplemental_page_table_kill(&curr->spt);
+	if (!hash_empty(&curr->spt.table))
+	{
+		supplemental_page_table_kill(&curr->spt);
+	}
 #endif
 
 	uint64_t *pml4;
@@ -631,13 +634,8 @@ load(const char *file_name, struct intr_frame *if_)
 
 	/* Read and verify executable header. */
 	/* ELF 파일의 헤더정보를 읽어와 저장 */
-	if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr 
-			|| memcmp(ehdr.e_ident, "\177ELF\2\1\1", 7) 
-			|| ehdr.e_type != 2 
-			|| ehdr.e_machine != 0x3E // amd64
-			|| ehdr.e_version != 1 
-			|| ehdr.e_phentsize != sizeof(struct Phdr) 
-			|| ehdr.e_phnum > 1024)
+	if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr || memcmp(ehdr.e_ident, "\177ELF\2\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 0x3E // amd64
+		|| ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Phdr) || ehdr.e_phnum > 1024)
 	{
 		printf("load: %s: error loading executable\n", argv[0]);
 		goto done;
@@ -882,7 +880,8 @@ install_page(void *upage, void *kpage, bool writable)
  * upper block. */
 
 /* file_info 구조체 선언 */
-struct file_info{
+struct file_info
+{
 	struct file *file;
 	off_t ofs;
 	uint32_t page_read_bytes;
@@ -904,8 +903,8 @@ lazy_load_segment(struct page *page, void *aux)
 	// 1) Load 해야할 부분으로 file_ofs 변경
 	file_seek(file_info->file, file_info->ofs);
 
-	// 2) Load segment 
-	// 앞에서 가져온 aux의 page_read_byte와 kva로 접근해서 읽는 바이트의 크기를 비교 
+	// 2) Load segment
+	// 앞에서 가져온 aux의 page_read_byte와 kva로 접근해서 읽는 바이트의 크기를 비교
 	if (file_read(file_info->file, page->frame->kva, page_read_bytes) != page_read_bytes)
 		return false;
 
@@ -913,8 +912,6 @@ lazy_load_segment(struct page *page, void *aux)
 	memset(page->frame->kva + page_read_bytes, 0, file_info->page_zero_bytes);
 
 	return true;
-
-
 }
 
 /* VM일 경우 */
@@ -949,7 +946,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		/* TODO: Set up aux to pass information to the lazy_load_segment. 
+		/* TODO: Set up aux to pass information to the lazy_load_segment.
 		   (simons) aux를 통해 file data 전달을 위해 만든 struct file_info */
 		struct file_info *file_info = (struct file_info *)malloc(sizeof(struct file_info));
 
@@ -957,10 +954,10 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		file_info->ofs = ofs;
 		file_info->page_read_bytes = page_read_bytes;
 		file_info->page_zero_bytes = page_zero_bytes;
-		
+
 		/* 해당 virtual memory(=upage)에 struct page를 할당해줌
 		   physical memory로 load되기 전에는 uninit page
-		   
+
 		   page_fault로 physical memory로 load될 때는 할당 당시에 입력받은 page type으로 변환하고
 		   lazy_load_segment 함수를 실행시켜서 upload함 */
 
@@ -968,10 +965,10 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 			return false;
 
 		/* Advance. */
-		read_bytes -= page_read_bytes;	// 남은 read_bytes 갱신
-		zero_bytes -= page_zero_bytes;  // 남은 zero_bytes 갱신 
-		upage += PGSIZE;				// virtual addres를 옮겨서 다음 page space를 가리키게 함
-		ofs += PGSIZE; 					// 다음 page에 매핑시킬 file 위치 갱신 (??? offset은 같아도 되지 않나 ???)
+		read_bytes -= page_read_bytes; // 남은 read_bytes 갱신
+		zero_bytes -= page_zero_bytes; // 남은 zero_bytes 갱신
+		upage += PGSIZE;			   // virtual addres를 옮겨서 다음 page space를 가리키게 함
+		ofs += PGSIZE;				   // 다음 page에 매핑시킬 file 위치 갱신 (??? offset은 같아도 되지 않나 ???)
 	}
 	return true;
 }
@@ -994,7 +991,7 @@ static bool setup_stack(struct intr_frame *if_)
 	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
 
 	// 1) 확보한 page space에 struct page 할당
-	if(!vm_alloc_page_with_initializer(VM_ANON, stack_bottom, true, NULL, NULL))
+	if (!vm_alloc_page_with_initializer(VM_ANON, stack_bottom, true, NULL, NULL))
 		return false;
 
 	// 2) page를 physical memory에 바로 올림
@@ -1008,4 +1005,3 @@ static bool setup_stack(struct intr_frame *if_)
 	return true;
 }
 #endif /* VM */
-
