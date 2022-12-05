@@ -53,6 +53,9 @@ void close(int fd);
 
 int dup2(int oldfd, int newfd);
 
+/* Project 3 */
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+
 void syscall_init(void)
 {
 	sema_init(&mutex, 1);
@@ -202,6 +205,13 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		// argv[0]: int oldfd
 		// argv[1]: int newfd
 		f->R.rax = dup2(f->R.rdi, f->R.rsi);
+		break;
+
+	case SYS_MMAP:
+		// argv[0]: int oldfd
+		// argv[1]: int newfd
+		check_address(f->R.rsi);
+		mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
 		break;
 	}
 }
@@ -464,4 +474,38 @@ int dup2(int oldfd, int newfd)
 	close(newfd);
 	curr->fdt[newfd] = f;
 	return newfd;
+}
+
+/* mmap 함수 */
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+
+	/* 제약사항 1) 파일의 시작점(offset)이 page-aligned 되지 않았을 경우 */
+	if (offset % PGSIZE != 0)
+		exit(-1);
+
+	/* 제약사항 2) 가상유저  */
+	if ((int)addr % PGSIZE != 0)
+		exit(-1);
+
+	/* 제약사항 3) 매핑하려는 페이지가 이미 존재하는 페이지와 겹칠 때 */
+	struct thread *curr = thread_current();
+	struct supplemental_page_table *spt = &(curr->spt);
+
+	if (spt_find_page(spt, addr) != NULL)
+		exit(-1);
+
+	/* 제약사항 4) 페이지를 만들 시작 주소 addr이 0이거나 파일 길이가 0일때 */
+	if ((addr == 0) || (length == 0))
+		exit(-1);
+
+	/* 제약사항 5) 콘솔 입출력과 연관된 파일 디스크립터 값(0:STDIN, 1:STDOUT)일때 */
+	if ((fd == 0) || (fd == 1))
+		exit(-1);
+
+	struct file *file = curr->run_file;
+	if (file == NULL)
+		exit(-1);
+
+	do_mmap(addr, length, writable, file, offset);
 }
