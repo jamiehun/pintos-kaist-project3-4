@@ -98,18 +98,18 @@ struct page *spt_find_page(struct supplemental_page_table *spt, void *va)
 
 	/* 1) 새로 페이지를 할당받아서 페이지에 대한 va를 기존 va로 받음
 		  대신, va를 저장할 때는 pg_round_down을 통해 시작점을 기준으로 설정 => va에 대한 페이지 준비 */
-	struct page *temp_page = (struct page *)malloc(sizeof(struct page)); // ??? page를 새로 할당받을 생각
-	temp_page->va = pg_round_down(va);
+	struct page temp_page;
+	temp_page.va = pg_round_down(va);
 
 	/* 2) spt 테이블에서 위에서 만든 hash_elem을 찾음(page 구조체에 hash_elem 추가)
 		  hash_table의 hash_elem이 곧 page이므로 저장해도 됨 */
-	struct hash_elem *temp_hash_elem = hash_find(&spt->table, &temp_page->hash_elem);
+	struct hash_elem *temp_hash_elem = hash_find(&spt->table, &temp_page.hash_elem);
 
 	if (temp_hash_elem == NULL)
 		return NULL;
 
 	/* 3) temp_page의 경우 다 썼기 때문에 free하여 할당 해제함 */
-	free(temp_page);
+	// free(temp_page);
 
 	/* 4) hash_elem != hash_entry를 통해 나온 hash_elem
 		  hash_entry에서 나온 내용은 hash_elem, 곧 page라고 할 수 있음 */
@@ -206,8 +206,11 @@ static struct frame *vm_get_frame(void)
 /* 스택 증가 확인 후 해당 함수 호출하여 스택을 증가시킴 */
 /* Growing the stack. */
 static void
-vm_stack_growth(void *addr UNUSED)
+vm_stack_growth(void *addr)
 {
+	uintptr_t stack_bottom = pg_round_down(addr);
+	vm_alloc_page(VM_ANON, stack_bottom, true);
+	thread_current()->stack_bottom = addr; // stack_bottom을 update
 }
 
 /* Handle the fault on write_protected page */
@@ -222,7 +225,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 {
 	bool succ = false;
 
-	// 1) addr이 kernel 영역의 vaddr이거나, addr이 NULL일 경우
+	// 1) addr이 kernel 영역의 vaddr이거나, addr이 NULL일 경우 (check validation)
 	if (is_kernel_vaddr(addr) || addr == NULL)
 		return false;
 
@@ -230,6 +233,28 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 	struct supplemental_page_table *spt = &thread_current()->spt;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+
+	/* STACK GROWTH */
+	uintptr_t stack_limit = USER_STACK - (1 << 20);				// stack은 1MB로 제한되어 있음
+	uintptr_t rsp = user ? f->rsp : thread_current()->user_rsp; // User 영역으로 접근하지 않을시에는 thread_current()에 있는 user_rsp로 접근
+
+	/* 변경 전 */
+	// uintptr_t stack_bottom = thread_current()->stack_bottom;
+
+	// if (addr < stack_bottom && addr >= stack_limit)
+	// {
+	// 	/* stack bottom의 바닥을 넘어서 가리킬 때 */
+	// 	if (addr >= stack_bottom + PGSIZE) // ??? 여기에서 바닥이 무엇인지
+	// 		return false;
+
+	// 	vm_stack_growth(addr);
+	// }
+
+	/* 변경 후 */
+	uintptr_t stack_bottom = pg_round_down(rsp);
+
+	if (addr >= rsp - 8 && addr <= USER_STACK && addr >= stack_limit)
+		vm_stack_growth(addr);
 
 	// 3) page의 경우 spt_find_page로 찾음
 	struct page *page = spt_find_page(spt, addr);
@@ -293,6 +318,9 @@ static bool vm_do_claim_page(struct page *page)
 
 unsigned spt_hash(const struct hash_elem *elem, void *aux UNUSED);
 static unsigned spt_less(const struct hash_elem *a, const struct hash_elem *b);
+void hash_copy(struct hash_elem *hash_elem, void *aux);
+void hash_destructor(struct hash_elem *hash_elem, void *aux);
+void supplemental_page_table_init(struct supplemental_page_table *spt);
 
 /* 보조테이블을 초기화하는 함수 (해시테이블 자료 구조로 구현)
    새로운 프로세스 시작하거나 do_fork로 자식 프로세스 생성될 때 위 함수 호출*/
@@ -312,7 +340,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst, struct su
 
 	// 1.
 	struct hash_iterator i;
-	struct hash *parent_hash = &(src->table);
+	struct hash *parent_hash = &src->table;
 
 	hash_first(&i, parent_hash);
 	while (hash_next(&i))
@@ -350,24 +378,26 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED)
 	// 2. hash_elem으로 page 찾기
 	// 3. free
 
-	// 1.
-	struct hash_iterator i;
-	struct hash *parent_hash = &(spt->table);
-	if (parent_hash == NULL)
-	{
-		return false;
-	}
+	// // 1.
+	// struct hash_iterator i;
+	// struct hash *parent_hash = &(spt->table);
+	// if (parent_hash == NULL)
+	// {
+	// 	return false;
+	// }
 
-	hash_first(&i, parent_hash);
-	while (hash_next(&i))
-	{
-		// 2.
-		struct page *page_should_be_destroyed = hash_entry(hash_cur(&i), struct page, hash_elem);
-		// 3.
-		destroy(page_should_be_destroyed);
-		hash_delete(parent_hash, hash_cur(&i));
-	}
+	// hash_first(&i, parent_hash);
+	// while (hash_next(&i))
+	// {
+	// 	// 2.
+	// 	struct page *page_should_be_destroyed = hash_entry(hash_cur(&i), struct page, hash_elem);
+	// 	// 3.
+	// 	destroy(page_should_be_destroyed);
+	// 	hash_delete(parent_hash, hash_cur(&i));
+	// }
+
 	// 해쉬도 지워주어야 하나?? hash_destroy()
+	hash_destroy(&spt->table, hash_destructor);
 }
 
 /********** Project 3: Virtual Memory **********/
@@ -390,4 +420,17 @@ static unsigned spt_less(const struct hash_elem *a, const struct hash_elem *b)
 	const struct page *page_b = hash_entry(b, struct page, hash_elem);
 
 	return page_a->va < page_b->va;
+}
+
+void hash_destructor(struct hash_elem *hash_elem, void *aux)
+{
+	struct page *page = hash_entry(hash_elem, struct page, hash_elem);
+	vm_dealloc_page(page);
+}
+
+void hash_print(struct hash_elem *hash_elem, void *aux)
+{
+	struct page *page = hash_entry(hash_elem, struct page, hash_elem);
+
+	printf("[Debug]page->va: %p\n", page->va);
 }
