@@ -55,6 +55,7 @@ int dup2(int oldfd, int newfd);
 
 /* Project 3 */
 void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void *addr);
 
 void syscall_init(void)
 {
@@ -92,6 +93,7 @@ user mode로 돌아갈 때 사용할 if를 syscall_handler의 인자로 넣어�
 */
 void syscall_handler(struct intr_frame *f UNUSED)
 {
+	/* Project 2 */
 	// SYS_HALT,		/* Halt the operating system. */
 	// SYS_EXIT,		/* Terminate this process. */
 	// SYS_FORK,		/* Clone current process. */
@@ -107,7 +109,14 @@ void syscall_handler(struct intr_frame *f UNUSED)
 	// SYS_TELL,		/* Report current position in a file. */
 	// SYS_CLOSE,		/* Close a file. */
 
+	/* Extra for Project 2*/
 	// SYS_DUP2			/* Duplicate the file descriptor */
+
+	/* Project 3 and Optionally project 4 */
+	// SYS_MMAP			/* Map a file into memory */
+	// SYS_MUNMAO		/* Remove a memory mapping */
+
+	thread_current()->user_rsp = f->rsp;
 
 	switch (f->R.rax)
 	{
@@ -208,10 +217,19 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		break;
 
 	case SYS_MMAP:
-		// argv[0]: int oldfd
-		// argv[1]: int newfd
-		check_address(f->R.rsi);
+		// argv[0]: void *addr
+		// argv[1]: size_t length
+		// argv[2]: int writable
+		// argv[3]: int fd
+		// argv[4]: off_t offset
+		check_address(f->R.rdi);
+
 		mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+
+	case SYS_MUNMAP:
+		// argv[0]: void *addr
+		check_address(f->R.rdi);
 		break;
 	}
 }
@@ -480,32 +498,44 @@ int dup2(int oldfd, int newfd)
 void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 {
 
-	/* 제약사항 1) 파일의 시작점(offset)이 page-aligned 되지 않았을 경우 */
-	if (offset % PGSIZE != 0)
-		exit(-1);
+	// /* 제약사항 1) 파일의 시작점(offset)이 page-aligned 되지 않았을 경우 */
+	// if (offset % PGSIZE != 0)
+	// 	exit(-1);
 
-	/* 제약사항 2) 가상유저  */
-	if ((int)addr % PGSIZE != 0)
-		exit(-1);
+	// /* 제약사항 2) 가상유저  */
+	// if ((int)addr % PGSIZE != 0)
+	// 	exit(-1);
 
-	/* 제약사항 3) 매핑하려는 페이지가 이미 존재하는 페이지와 겹칠 때 */
-	struct thread *curr = thread_current();
-	struct supplemental_page_table *spt = &(curr->spt);
+	// /* 제약사항 3) 매핑하려는 페이지가 이미 존재하는 페이지와 겹칠 때 */
+	// struct thread *curr = thread_current();
+	// struct supplemental_page_table *spt = &(curr->spt);
 
-	if (spt_find_page(spt, addr) != NULL)
-		exit(-1);
+	// if (spt_find_page(spt, addr) != NULL)
+	// 	exit(-1);
 
-	/* 제약사항 4) 페이지를 만들 시작 주소 addr이 0이거나 파일 길이가 0일때 */
-	if ((addr == 0) || (length == 0))
-		exit(-1);
+	// /* 제약사항 4) 페이지를 만들 시작 주소 addr이 0이거나 파일 길이가 0일때 */
+	// if ((addr == 0) || (length == 0))
+	// 	exit(-1);
 
-	/* 제약사항 5) 콘솔 입출력과 연관된 파일 디스크립터 값(0:STDIN, 1:STDOUT)일때 */
-	if ((fd == 0) || (fd == 1))
-		exit(-1);
+	// /* 제약사항 5) 콘솔 입출력과 연관된 파일 디스크립터 값(0:STDIN, 1:STDOUT)일때 */
+	// if ((fd == 0) || (fd == 1))
+	// 	exit(-1);
 
-	struct file *file = curr->run_file;
-	if (file == NULL)
-		exit(-1);
+	// struct file *file = curr->run_file;
+	// if (file == NULL)
+	// 	exit(-1);
 
-	do_mmap(addr, length, writable, file, offset);
+	struct file *file = process_get_file(fd);
+	if (file == NULL || file == STDIN || file == STDOUT)
+		return NULL;
+
+	if (length == 0)
+		return NULL;
+
+	return do_mmap(addr, length, writable, file, offset);
+}
+
+void munmap(void *addr)
+{
+	do_munmap(addr);
 }

@@ -372,6 +372,8 @@ void argument_stack(int argc, char **argv, struct intr_frame *_if)
 	// rdi(첫번째 인자 register)와 rsi(두번째 인자 register)에 argc와 argv 삽입
 	_if->R.rdi = argc;
 	_if->R.rsi = _if->rsp + 8;
+
+	thread_current()->user_rsp = _if->rsp;
 }
 
 /* Switch the current execution context to the f_name.
@@ -391,6 +393,8 @@ int process_exec(void *f_name)
 
 	/* We first kill the current context */
 	process_cleanup();
+
+	supplemental_page_table_init(&thread_current()->spt.table);
 
 	/* And then load the binary */
 	success = load(file_name, &_if);
@@ -490,10 +494,7 @@ process_cleanup(void)
 	struct thread *curr = thread_current();
 
 #ifdef VM
-	if (!hash_empty(&curr->spt.table))
-	{
-		supplemental_page_table_kill(&curr->spt);
-	}
+	supplemental_page_table_kill(&curr->spt);
 #endif
 
 	uint64_t *pml4;
@@ -898,18 +899,26 @@ lazy_load_segment(struct page *page, void *aux)
 	/* TODO: VA is available when calling this function. */
 	/* aux로 전달받은 file data */
 	struct file_info *file_info = (struct file_info *)aux;
+
+	struct file *file = file_info->file;
+	off_t ofs = file_info->ofs;
+
 	int page_read_bytes = file_info->page_read_bytes;
+	int page_zero_bytes = file_info->page_zero_bytes;
 
 	// 1) Load 해야할 부분으로 file_ofs 변경
-	file_seek(file_info->file, file_info->ofs);
+	file_seek(file, ofs);
 
 	// 2) Load segment
 	// 앞에서 가져온 aux의 page_read_byte와 kva로 접근해서 읽는 바이트의 크기를 비교
-	if (file_read(file_info->file, page->frame->kva, page_read_bytes) != page_read_bytes)
+	if (file_read(file, page->frame->kva, page_read_bytes) != page_read_bytes)
+	{
+		free(file_info); // 바이트 크기가 맞지 않을 경우 file_info를 free 시켜줌
 		return false;
+	}
 
 	// 3) setup zero bytes space
-	memset(page->frame->kva + page_read_bytes, 0, file_info->page_zero_bytes);
+	memset(page->frame->kva + page_read_bytes, 0, page_zero_bytes);
 
 	return true;
 }
@@ -1001,6 +1010,7 @@ static bool setup_stack(struct intr_frame *if_)
 
 	// 3) stack pointer 설정
 	if_->rsp = USER_STACK;
+	curr->stack_bottom = stack_bottom; // thread 구조체에 대한 stack_bottom도 update
 
 	return true;
 }
