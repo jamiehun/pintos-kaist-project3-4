@@ -3,6 +3,7 @@
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "lib/kernel/bitmap.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -27,6 +28,7 @@ struct fat_fs {
 };
 
 static struct fat_fs *fat_fs;
+struct bitmap *fat_bitmap;
 
 void fat_boot_create(void);
 void fat_fs_init(void);
@@ -49,6 +51,7 @@ void fat_init(void)
 	if (fat_fs->bs.magic != FAT_MAGIC)
 		fat_boot_create();
 	fat_fs_init();
+
 }
 
 void fat_open(void)

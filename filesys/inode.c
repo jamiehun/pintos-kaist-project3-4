@@ -6,6 +6,7 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "filesys/fat.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
@@ -32,11 +33,11 @@ bytes_to_sectors(off_t size)
 struct inode
 {
 	struct list_elem elem;	/* Element in inode list. */
-	disk_sector_t sector;	/* Sector number of disk location. */
-	int open_cnt;			/* Number of openers. */
+	disk_sector_t sector;	/* Sector number of disk location. (inode_disk가 저장되어 있는 disk의 sector) */
+	int open_cnt;			/* Number of openers. (inode가 열려있으면 닫으면 안됨) */
 	bool removed;			/* True if deleted, false otherwise. */
 	int deny_write_cnt;		/* 0: writes ok, >0: deny writes. */
-	struct inode_disk data; /* Inode content. */
+	struct inode_disk data; /* Inode content.(물리메모리에 올려 놓은 데이터) */
 };
 
 /* Returns the disk sector that contains byte offset POS within
@@ -63,6 +64,8 @@ void inode_init(void)
 	list_init(&open_inodes);
 }
 
+/* Sector에 length 바이트 만큼의 inode를 만들어줌*/
+/* !!! 변경필요 !!! */
 /* Initializes an inode with LENGTH bytes of data and
  * writes the new inode to sector SECTOR on the file system
  * disk.
@@ -70,7 +73,8 @@ void inode_init(void)
  * Returns false if memory or disk allocation fails. */
 bool inode_create(disk_sector_t sector, off_t length)
 {
-	struct inode_disk *disk_inode = NULL;
+	/* disk_inode를 초기화하기 위해 만들어줌*/
+	struct inode_disk *disk_inode = NULL; // on-disk inode를 하나 만들어줌
 	bool success = false;
 
 	ASSERT(length >= 0);
@@ -82,23 +86,25 @@ bool inode_create(disk_sector_t sector, off_t length)
 	disk_inode = calloc(1, sizeof *disk_inode);
 	if (disk_inode != NULL)
 	{
-		size_t sectors = bytes_to_sectors(length);
+		size_t sectors = bytes_to_sectors(length); // length byte를 기준으로 sectors(sector의 개수)를 만들어줌
 		disk_inode->length = length;
 		disk_inode->magic = INODE_MAGIC;
-		if (free_map_allocate(sectors, &disk_inode->start))
+		if (free_map_allocate(sectors, &disk_inode->start)) // start부터 sectors만큼 할당, 저장을 시작 (!!!변경필요)
 		{
-			disk_write(filesys_disk, sector, disk_inode);
+			disk_write(filesys_disk, sector, disk_inode); // disk_inode -> filesys_disk를 write (sector에)
 			if (sectors > 0)
 			{
 				static char zeros[DISK_SECTOR_SIZE];
 				size_t i;
 
 				for (i = 0; i < sectors; i++)
-					disk_write(filesys_disk, disk_inode->start + i, zeros);
+					disk_write(filesys_disk, disk_inode->start + i, zeros); // 연속적으로 write 해 줌
+					// 위의 disk_write랑 다른 점은 위의 disk_write는 disk_inode를 sector에 저장해주기 위한 함수이고,
+					// 아래의 disk_write는 앞으로 써 나갈 내용을 sectors에 0으로 저장을 해놓는 것으로 보임
 			}
 			success = true;
 		}
-		free(disk_inode);
+		free(disk_inode); // 저장을 완료한 disk_inode를 free 
 	}
 	return success;
 }
@@ -112,6 +118,7 @@ inode_open(disk_sector_t sector)
 	struct list_elem *e;
 	struct inode *inode;
 
+	/* 이미 열려있으면 reopen 후 return */
 	/* Check whether this inode is already open. */
 	for (e = list_begin(&open_inodes); e != list_end(&open_inodes);
 		 e = list_next(e))
@@ -124,12 +131,14 @@ inode_open(disk_sector_t sector)
 		}
 	}
 
+	/* 열려있지 않으면 새로운 inode를 malloc */
 	/* Allocate memory. */
 	inode = malloc(sizeof *inode);
 	if (inode == NULL)
 		return NULL;
 
 	/* Initialize. */
+	/* 위에서 malloc한 inode에 대한 값을 설정해줌 */
 	list_push_front(&open_inodes, &inode->elem);
 	inode->sector = sector;
 	inode->open_cnt = 1;
@@ -155,6 +164,7 @@ inode_get_inumber(const struct inode *inode)
 	return inode->sector;
 }
 
+/* !!! 수정필요 !!! */
 /* Closes INODE and writes it to disk.
  * If this was the last reference to INODE, frees its memory.
  * If INODE was also a removed inode, frees its blocks. */
@@ -173,9 +183,9 @@ void inode_close(struct inode *inode)
 		/* Deallocate blocks if removed. */
 		if (inode->removed)
 		{
-			free_map_release(inode->sector, 1);
+			free_map_release(inode->sector, 1); // inode_disk를 free
 			free_map_release(inode->data.start,
-							 bytes_to_sectors(inode->data.length));
+							 bytes_to_sectors(inode->data.length)); // sectors를 전부 free (!!! 수정필요)
 		}
 
 		free(inode);

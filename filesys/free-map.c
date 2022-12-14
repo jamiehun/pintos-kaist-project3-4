@@ -18,6 +18,7 @@ free_map_init (void) {
 	bitmap_mark (free_map, ROOT_DIR_SECTOR);
 }
 
+/* CNT의 연속적인 섹터에 할당, *SECTORP에서부터 저장을 시작 */
 /* Allocates CNT consecutive sectors from the free map and stores
  * the first into *SECTORP.
  * Returns true if successful, false if all sectors were
@@ -36,12 +37,13 @@ free_map_allocate (size_t cnt, disk_sector_t *sectorp) {
 	return sector != BITMAP_ERROR;
 }
 
+/* SECTOR에서 시작해서 CNT sectors를 사용 가능(free)하게 만듦 */
 /* Makes CNT sectors starting at SECTOR available for use. */
 void
 free_map_release (disk_sector_t sector, size_t cnt) {
 	ASSERT (bitmap_all (free_map, sector, cnt));
 	bitmap_set_multiple (free_map, sector, cnt, false);
-	bitmap_write (free_map, free_map_file);
+	bitmap_write (free_map, free_map_file); // free_map_file에 free_map을 write
 }
 
 /* Opens the free map file and reads it from disk. */
