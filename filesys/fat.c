@@ -8,22 +8,22 @@
 
 /* Should be less than DISK_SECTOR_SIZE */
 struct fat_boot {
-	unsigned int magic;
-	unsigned int sectors_per_cluster; /* Fixed to 1 */
-	unsigned int total_sectors;
-	unsigned int fat_start;
-	unsigned int fat_sectors; /* Size of FAT in sectors. */
-	unsigned int root_dir_cluster;
+	unsigned int magic;                 /* overflow 감지 */
+	unsigned int sectors_per_cluster;   /* Fixed to 1 */
+	unsigned int total_sectors;         /* disk의 모든 sector 수 */
+	unsigned int fat_start;             /* FAT가 시작하는 sector의 number */
+	unsigned int fat_sectors;           /* FAT가 차지하는 sector의 수 */
+	unsigned int root_dir_cluster;      /* root dirctory의 cluster number*/ 
 };
 
 /* FAT FS */
 struct fat_fs {
-	struct fat_boot bs;
-	unsigned int *fat;
-	unsigned int fat_length;
-	disk_sector_t data_start;
-	cluster_t last_clst;
-	struct lock write_lock;
+	struct fat_boot bs;                  /* filesystem의 정보 */
+	unsigned int *fat;                   /* FAT */
+	unsigned int fat_length;             /* FAT의 길이 -> entry 개수 */
+	disk_sector_t data_start;            /* data block이 시작되는 sector number */
+	cluster_t last_clst;                 /* 마지막 클러스트 */
+	struct lock write_lock;              /* 쓰기 lock */
 };
 
 static struct fat_fs *fat_fs;
@@ -31,6 +31,7 @@ static struct fat_fs *fat_fs;
 void fat_boot_create (void);
 void fat_fs_init (void);
 
+/* FAT_init으로 FAT 최초 init */
 void
 fat_init (void) {
 	fat_fs = calloc (1, sizeof (struct fat_fs));
@@ -41,8 +42,8 @@ fat_init (void) {
 	unsigned int *bounce = malloc (DISK_SECTOR_SIZE);
 	if (bounce == NULL)
 		PANIC ("FAT init failed");
-	disk_read (filesys_disk, FAT_BOOT_SECTOR, bounce);
-	memcpy (&fat_fs->bs, bounce, sizeof (fat_fs->bs));
+	disk_read (filesys_disk, FAT_BOOT_SECTOR, bounce);  // filesys_disk -> bounce로 FAT_BOOT_SECTOR를 읽음
+	memcpy (&fat_fs->bs, bounce, sizeof (fat_fs->bs)); // fat_boot에 bounce를 memcpy
 	free (bounce);
 
 	// Extract FAT info
@@ -153,6 +154,10 @@ fat_boot_create (void) {
 void
 fat_fs_init (void) {
 	/* TODO: Your code goes here. */
+	/* fat_length와 data_start 필드를 초기화 */
+	// fat_length : 파일시스템의 클러스터 수 
+	fat_fs->fat_length = (fat_fs->bs.fat_sectors * DISK_SECTOR_SIZE) / (sizeof(cluster_t) * SECTORS_PER_CLUSTER); 
+	fat_fs->data_start = fat_fs->bs.fat_start + fat_fs->bs.fat_sectors;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -161,10 +166,26 @@ fat_fs_init (void) {
 
 /* Add a cluster to the chain.
  * If CLST is 0, start a new chain.
- * Returns 0 if fails to allocate a new cluster. */
+ * Returns 0 if fails to allocate a new cluster. (체인을 확장!) */
 cluster_t
 fat_create_chain (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	int i;
+	for (i = 2; i < fat_fs->fat_length || fat_get(i) > 0; i++) // 1은 루트 디렉토리
+		;
+	fat_put(i, EOChain);
+
+	if (clst == 0)
+		return i;
+
+	cluster_t temp_c;
+
+	for(temp_c = clst; fat_get(temp_c) != EOChain; temp_c = fat_get(temp_c))
+		;
+
+	fat_put(temp_c, i);
+
+	return i;
 }
 
 /* Remove the chain of clusters starting from CLST.
@@ -172,22 +193,33 @@ fat_create_chain (cluster_t clst) {
 void
 fat_remove_chain (cluster_t clst, cluster_t pclst) {
 	/* TODO: Your code goes here. */
+	if (pclst)
+		fat_put(pclst, EOChain);
+	cluster_t temp_c = clst;
+	
+	for (; fat_get(temp_c) != EOChain; temp_c = fat_get(temp_c))
+		fat_put(temp_c, 0);
+	
+	fat_put(temp_c, 0);
 }
 
 /* Update a value in the FAT table. */
 void
 fat_put (cluster_t clst, cluster_t val) {
 	/* TODO: Your code goes here. */
+	fat_fs->fat[clst] = val;
 }
 
 /* Fetch a value in the FAT table. */
 cluster_t
 fat_get (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	return fat_fs->fat[clst];
 }
 
 /* Covert a cluster # to a sector number. */
 disk_sector_t
 cluster_to_sector (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	return clst + fat_fs->data_start;
 }
