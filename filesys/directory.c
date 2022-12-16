@@ -46,7 +46,8 @@ dir_open (struct inode *inode) {
  * Return true if successful, false on failure. */
 struct dir *
 dir_open_root (void) {
-	return dir_open (inode_open (ROOT_DIR_SECTOR));
+	disk_sector_t root = cluster_to_sector(ROOT_DIR_SECTOR);
+	return dir_open (inode_open (root));
 }
 
 /* Opens and returns a new directory for the same inode as DIR.

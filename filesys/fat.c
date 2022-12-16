@@ -181,12 +181,12 @@ fat_create_chain(cluster_t clst)
 {
 	int i;
 
+	// 비어있는 fat_fs를 찾아주는 for문 함수
 	for (i = 2; i < fat_fs->fat_length && fat_get(i) > 0; i++)
 	;
 
 	// 1) fat_fs->fat_length >= i 여서 for 문에서 빠져 나올 경우 return 0;
 	// 2) fat_get(i)가 0보다 작거나 같아서 for 문에서 빠져 나올 경우 fat_put을 해줌 
-
 	if (i >= fat_fs->fat_length)
 		return 0;
 
@@ -197,6 +197,7 @@ fat_create_chain(cluster_t clst)
 
 	cluster_t temp_c;
 
+	// clst를 처음부터 순회하여 확장하기 전 마지막 fat에서 i를 다음 cluster로 설정해줌
 	for(temp_c = clst; fat_get(temp_c) != EOChain; temp_c = fat_get(temp_c))
 		;
 
@@ -212,11 +213,16 @@ fat_remove_chain (cluster_t clst, cluster_t pclst) {
 	/* TODO: Your code goes here. */
 	if (pclst)
 		fat_put(pclst, EOChain);
-	cluster_t temp_c = clst;
 	
-	for (; fat_get(temp_c) != EOChain; temp_c = fat_get(temp_c))
+	cluster_t temp_c = clst;
+	cluster_t next_c;
+	
+	// for문 돌면서 EOChain 만나기 전까지 fat_put(temp_c, 0)
+	for (; fat_get(temp_c) != EOChain; temp_c = next_c){
+		next_c = fat_get(temp_c);
 		fat_put(temp_c, 0);
 	
+	}
 	fat_put(temp_c, 0);
 }
 
@@ -239,4 +245,12 @@ disk_sector_t
 cluster_to_sector (cluster_t clst) {
 	/* TODO: Your code goes here. */
 	return clst + fat_fs->data_start;
+}
+
+cluster_t sector_to_cluster(disk_sector_t sector){
+	cluster_t clst = sector - fat_fs->data_start;
+	if (clst < 2)
+		return 0;
+
+	return clst;
 }
